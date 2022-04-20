@@ -4,6 +4,7 @@ open App.Model
 open Browser.Types
 open Fable.Core.JsInterop
 open App.Render
+open Browser
 
 let private processTurn frameTime game =
   let (|NoTimeRemaining|TimeRemaining|) timeRemaining = if timeRemaining <= 0.<ms> then NoTimeRemaining else TimeRemaining
@@ -12,7 +13,8 @@ let private processTurn frameTime game =
   let createNewBlockInPlay () =
     let block = Blocks.getRandomBlock ()
     let constraints = Blocks.getConstraints block
-    { Block = Blocks.getRandomBlock() ; X = 5 ; Y = -constraints.MinY }
+    console.log constraints
+    { Block = block ; X = 5 ; Y = -constraints.MinY }
   
   let newTimeRemaining = game.TimeUntilDrop - frameTime
   let blockInPlay =
@@ -29,6 +31,7 @@ let private processTurn frameTime game =
   { game with
       BlockInPlay = blockInPlay
       IsInCollision = blockInPlay |> collides game.Cells
+      TimeUntilDrop = if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
   }
 
 let init (canvas:HTMLCanvasElement) =

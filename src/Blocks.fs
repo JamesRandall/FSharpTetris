@@ -15,7 +15,7 @@ let getConstraints (block:Block) =
             MaxX = if cell > 0 && colIndex > c2.MaxX then colIndex else c2.MaxX
             MaxY = if cell > 0 && rowIndex > c2.MaxY then rowIndex else c2.MaxY
         }
-      newConstraints,colIndex+1,rowIndex
+      newConstraints,colIndex+1,rowIndex+1
     ) (c1,0,rowIndex)
   ) ({ MinX = Int32.MaxValue ; MinY = Int32.MaxValue ; MaxX = Int32.MinValue ; MaxY = Int32.MinValue },0,0)
   |> (fun (c,_,_) -> c)
