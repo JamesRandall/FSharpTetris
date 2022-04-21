@@ -4,6 +4,7 @@ open App.Model
 open Browser.Types
 open Fable.Core.JsInterop
 open App.Render
+open Browser
 
 // we want a 10x18 hole but we oversize it so we can have the left, right and bottom for the pit walls
 let private pitWidth = 12 // left and right are for walls
@@ -50,9 +51,10 @@ let private updateForRowRemoval game =
 let private updateWithNextBlock game =
   match game.GameMode with
   | GameMode.Normal ->
-    let nextBlockConstraints = Blocks.getConstraints game.NextBlock
+    let nextBlock = game.NextBlock
+    let nextBlockConstraints = Blocks.getConstraints nextBlock
     { game with
-        BlockInPlay = { Block = game.NextBlock ; X = 5 ;  Y = -nextBlockConstraints.MinY } |> Some
+        BlockInPlay = { Block = nextBlock ; X = 5 ;  Y = -nextBlockConstraints.MinY } |> Some
         NextBlock = Blocks.getRandomBlock ()
     }
   | _ -> game
@@ -151,7 +153,7 @@ let private processTurn frameTime game =
           else
             { game with BlockInPlay = { blockInPlay with Y = blockInPlay.Y + 1 } |> Some }
         | NoTimeRemaining,None ->
-          { game with BlockInPlay = createNewBlockInPlay () |> Some ; NextBlock = Blocks.getRandomBlock () }
+          game |> updateWithNextBlock
       
       { newGameState with
           IsInCollision =
