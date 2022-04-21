@@ -13,6 +13,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "build", "build", "{A622FEA2
 		webpack.config.js = webpack.config.js
 		package.json = package.json
 		package-lock.json = package-lock.json
+		README.md = README.md
 	EndProjectSection
 EndProject
 Global

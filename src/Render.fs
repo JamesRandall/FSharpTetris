@@ -15,7 +15,7 @@ let fill (context:CanvasRenderingContext2D) color left top width height =
   context.fillStyle <- (color |> toColorString |> U3.Case1)
   context.fillRect (left, top, width, height)
   
-let clear (context:CanvasRenderingContext2D) =
+let clearCanvas (context:CanvasRenderingContext2D) =
   fill context 0 0. 0. context.canvas.width context.canvas.height
   
 let stroke (context:CanvasRenderingContext2D) strokeSize color x1 y1 x2 y2 =

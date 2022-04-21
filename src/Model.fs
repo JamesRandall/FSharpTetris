@@ -35,6 +35,15 @@ type Cell =
   | Block of BlockColor
   | Empty
   
+[<RequireQualifiedAccess>]
+type ControlState =
+  | MoveLeft
+  | MoveRight
+  | MoveDown
+  | RotateLeft
+  | RotateRight
+  | None
+  
 type Game =
   { Cells: Cell[][] // Array2D not supported in Fable
     NextBlock: Block

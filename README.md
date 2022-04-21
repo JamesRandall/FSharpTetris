@@ -1,6 +1,11 @@
-# Fable Minimal App
+# F# / Fable Tetris
 
-This is a small Fable app project so you can easily get started and add your own code progressively. For more comprehensive templates [check this page](https://fable.io/docs/2-steps/your-first-fable-project.html).
+Simple implementation of Tetris in F# using Fable to run it in a browser. Might not be an exact match for "real" Tetris. Was only distracting myself with some code really.
+
+Basic premise / architecture is to keep the event based browser model and mutable state at the top level so the rest of the code can be more purely functional in nature.
+
+Rest of the docs come from the Fable starter project but apply to running this yourself.
+
 
 ## Requirements
 
