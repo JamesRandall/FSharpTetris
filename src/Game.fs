@@ -25,39 +25,90 @@ let private isInCollision blockArray x y (pit:Cell[][]) =
   |> Array.tryHead
   |> Option.isSome
 
+let private updateForRowRemoval game =
+  let shouldBeRemoved row =
+    // if we have as many blocks as the pit is wide (minus the walls) then we can remove the row
+    let blockCount = row |> Array.filter(function | Cell.Block _ -> true | _ -> false) |> Array.length
+    blockCount = pitWidth-2
+    
+  let rowIndexes =
+    game.Cells
+    |> Array.mapi(fun rowIndex row ->
+      if row |> shouldBeRemoved then [rowIndex] else []
+    )
+    |> Array.toList
+    |> List.concat
+  if rowIndexes |> List.isEmpty then
+    game
+  else
+    { game with GameMode = rowIndexes |> ErasingRowMode.BlankingRows |> GameMode.ErasingRows }
+    
+let private updateWithNextBlock game =
+  match game.GameMode with
+  | GameMode.Normal ->
+    let nextBlockConstraints = Blocks.getConstraints game.NextBlock
+    { game with
+        BlockInPlay = { Block = game.NextBlock ; X = 5 ;  Y = -nextBlockConstraints.MinY } |> Some
+        NextBlock = Blocks.getRandomBlock ()
+    }
+  | _ -> game
+    
+let private populatePitWithBlockInPlay blockInPlay game =
+  // F# arrays are mutable but keeping things immutably functional in style - chose arrays because I'm doing a lot
+  // of indexed access
+  let newCells =
+    game.Cells
+    |> Array.mapi(fun rowIndex pitRow ->
+      let blockY = rowIndex - blockInPlay.Y
+      if blockY >= 0 && blockY < blockInPlay.Current.Length then
+        let blockRow = blockInPlay.Current.[blockY]
+        pitRow
+        |> Array.mapi(fun colIndex cell ->
+          let blockX = colIndex - blockInPlay.X
+          if blockX >= 0 && blockX < blockRow.Length then 
+            if blockRow.[blockX] <> 0 then Cell.Block blockInPlay.Block.Color else cell
+          else
+            cell
+        )
+      else
+        pitRow
+    )
+  { game with Cells = newCells }
+
 let private processTurn frameTime game =
   let (|NoTimeRemaining|TimeRemaining|) timeRemaining = if timeRemaining <= 0.<ms> then NoTimeRemaining else TimeRemaining
   let createNewBlockInPlay () =
     let block = Blocks.getRandomBlock ()
     let constraints = Blocks.getConstraints block
     { Block = block ; X = 5 ; Y = -constraints.MinY }
-  let putNextBlockInPlay () =
-    let constraints = Blocks.getConstraints game.NextBlock
-    { Block = game.NextBlock ; X = 5 ;  Y = -constraints.MinY }
   
-  let newTimeRemaining = game.TimeUntilDrop - frameTime
-  let newGameState =
-    match newTimeRemaining,game.BlockInPlay with
-    | TimeRemaining,_ -> game
-    | NoTimeRemaining,Some blockInPlay ->
-      let wouldCollide = isInCollision blockInPlay.Block.Current blockInPlay.X (blockInPlay.Y+1) game.Cells
-      if wouldCollide then
-        { game with
-            BlockInPlay = Some (putNextBlockInPlay ())
-            NextBlock = Blocks.getRandomBlock ()
-        }
-      else
-        { game with BlockInPlay = Some { blockInPlay with Y = blockInPlay.Y + 1 } }
-    | NoTimeRemaining,None ->
-      { game with BlockInPlay = createNewBlockInPlay () |> Some ; NextBlock = Blocks.getRandomBlock () }
-
-  { newGameState with
-      IsInCollision =
-        newGameState.BlockInPlay
-        |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
-        |> Option.defaultValue false
-      TimeUntilDrop = if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
-  }
+  match game.GameMode with
+  | GameMode.ErasingRows _ -> game
+  | GameMode.GameOver -> game
+  | GameMode.Normal ->
+    let newTimeRemaining = game.TimeUntilDrop - frameTime
+    let newGameState =
+      match newTimeRemaining,game.BlockInPlay with
+      | TimeRemaining,_ -> game
+      | NoTimeRemaining,Some blockInPlay ->
+        let wouldCollide = isInCollision blockInPlay.Block.Current blockInPlay.X (blockInPlay.Y+1) game.Cells
+        if wouldCollide then
+          game
+          |> populatePitWithBlockInPlay blockInPlay
+          |> updateForRowRemoval
+          |> updateWithNextBlock
+        else
+          { game with BlockInPlay = { blockInPlay with Y = blockInPlay.Y + 1 } |> Some }
+      | NoTimeRemaining,None ->
+        { game with BlockInPlay = createNewBlockInPlay () |> Some ; NextBlock = Blocks.getRandomBlock () }
+    
+    { newGameState with
+        IsInCollision =
+          newGameState.BlockInPlay
+          |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
+          |> Option.defaultValue false
+        TimeUntilDrop = if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
+    }
 
 let init (canvas:HTMLCanvasElement) =
   let context = canvas.getContext_2d()
@@ -71,7 +122,7 @@ let init (canvas:HTMLCanvasElement) =
         |> Seq.map(fun row ->
           {0..(pitWidth-1)}
           |> Seq.map(fun col ->
-            if col = 0 || col = pitWidth-1 || row = pitHeight-1 then Cell.Block pitColor else Cell.Empty
+            if col = 0 || col = pitWidth-1 || row = pitHeight-1 then Cell.Wall else Cell.Empty
           )
           |> Seq.toArray
         )
@@ -82,6 +133,7 @@ let init (canvas:HTMLCanvasElement) =
       Speed = 1000.<ms>
       TimeUntilDrop = 1000.<ms>
       IsInCollision = false
+      GameMode = GameMode.Normal
     }
   
   let gameLoop game (timestamp:float<ms>) =
@@ -113,6 +165,7 @@ let init (canvas:HTMLCanvasElement) =
         |> Array.iteri(fun col cell ->
           match cell with
           | Cell.Empty -> ()
+          | Cell.Wall -> drawSquare pitColor col row
           | Cell.Block blockColor -> drawSquare blockColor col row
         )  
       )
@@ -136,23 +189,29 @@ let init (canvas:HTMLCanvasElement) =
           CurrentRotation =
             if block.CurrentRotation + 1 >= block.Rotations.Length then 0 else block.CurrentRotation+1
       }
-    let playerMovedBlockOption =
-      game.BlockInPlay
-      |> Option.map (fun blockInPlay ->
-        let candidateBlockInPlay  =
-          match controlState with
-          | ControlState.MoveLeft -> { blockInPlay with X = blockInPlay.X - 1 }
-          | ControlState.MoveRight -> { blockInPlay with X = blockInPlay.X + 1 }
-          | ControlState.MoveDown -> { blockInPlay with Y = blockInPlay.Y + 1 }
-          | ControlState.RotateLeft -> { blockInPlay with Block = blockInPlay.Block |> rotateLeft }
-          | ControlState.RotateRight -> { blockInPlay with Block = blockInPlay.Block |> rotateRight }
-          | _ -> blockInPlay
-        if isInCollision candidateBlockInPlay.Block.Current candidateBlockInPlay.X candidateBlockInPlay.Y game.Cells then
-          blockInPlay
-        else
-          candidateBlockInPlay
-      )
-    { game with BlockInPlay = playerMovedBlockOption }
+    let updateGame blockInPlay = { game with BlockInPlay = Some blockInPlay }
+    let resetClock gameToReset = { gameToReset with TimeUntilDrop = gameToReset.Speed }
     
+    game.BlockInPlay
+    |> Option.map (fun blockInPlay ->
+      let candidateNewGameState  =
+        match controlState with
+        | ControlState.MoveLeft -> { blockInPlay with X = blockInPlay.X - 1 } |> updateGame
+        | ControlState.MoveRight -> { blockInPlay with X = blockInPlay.X + 1 } |> updateGame
+        | ControlState.MoveDown -> { blockInPlay with Y = blockInPlay.Y + 1 } |> updateGame |> resetClock
+        | ControlState.RotateLeft -> { blockInPlay with Block = blockInPlay.Block |> rotateLeft } |> updateGame
+        | ControlState.RotateRight -> { blockInPlay with Block = blockInPlay.Block |> rotateRight } |> updateGame
+        | _ -> game
+      candidateNewGameState.BlockInPlay
+      |> Option.map(fun candidateBlockInPlay ->
+        if isInCollision candidateBlockInPlay.Current candidateBlockInPlay.X candidateBlockInPlay.Y game.Cells then
+          game
+        else
+          candidateNewGameState
+      )
+      |> Option.defaultValue game
+    )
+    |> Option.defaultValue game
+
   gameLoop,controlStateHandler,initialGameState
   

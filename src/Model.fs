@@ -29,10 +29,12 @@ type BlockInPlay =
     X: int
     Y: int
   }
+  member x.Current = x.Block.Current
   
 [<RequireQualifiedAccess>]
 type Cell =
   | Block of BlockColor
+  | Wall
   | Empty
   
 [<RequireQualifiedAccess>]
@@ -44,6 +46,17 @@ type ControlState =
   | RotateRight
   | None
   
+[<RequireQualifiedAccess>]
+type ErasingRowMode =
+  | BlankingRows of rowIndexes:int list 
+  | FallingRows of rowIndexes:int list
+  
+[<RequireQualifiedAccess>]
+type GameMode =
+  | Normal
+  | ErasingRows of ErasingRowMode
+  | GameOver
+  
 type Game =
   { Cells: Cell[][] // Array2D not supported in Fable
     NextBlock: Block
@@ -52,4 +65,5 @@ type Game =
     Speed: float<ms>
     TimeUntilDrop: float<ms> // time until the game forces the block to drop a row
     IsInCollision: bool
+    GameMode: GameMode
   }
