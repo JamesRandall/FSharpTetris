@@ -31,23 +31,29 @@ let private processTurn frameTime game =
     let block = Blocks.getRandomBlock ()
     let constraints = Blocks.getConstraints block
     { Block = block ; X = 5 ; Y = -constraints.MinY }
-  
+  let putNextBlockInPlay () =
+    let constraints = Blocks.getConstraints game.NextBlock
+    { Block = game.NextBlock ; X = 5 ;  Y = -constraints.MinY }
   
   let newTimeRemaining = game.TimeUntilDrop - frameTime
-  let blockInPlayOption =
+  let newGameState =
     match newTimeRemaining,game.BlockInPlay with
-    | TimeRemaining,_ -> game.BlockInPlay
+    | TimeRemaining,_ -> game
     | NoTimeRemaining,Some blockInPlay ->
       let wouldCollide = isInCollision blockInPlay.Block.Current blockInPlay.X (blockInPlay.Y+1) game.Cells
-      Some { blockInPlay with Y = blockInPlay.Y + (if wouldCollide then 0 else 1)}
+      if wouldCollide then
+        { game with
+            BlockInPlay = Some (putNextBlockInPlay ())
+            NextBlock = Blocks.getRandomBlock ()
+        }
+      else
+        { game with BlockInPlay = Some { blockInPlay with Y = blockInPlay.Y + 1 } }
     | NoTimeRemaining,None ->
-      // TODO: create a new block and place it at the top of the screen - or try to anyway!
-      createNewBlockInPlay () |> Some
-  
-  { game with
-      BlockInPlay = blockInPlayOption
+      { game with BlockInPlay = createNewBlockInPlay () |> Some ; NextBlock = Blocks.getRandomBlock () }
+
+  { newGameState with
       IsInCollision =
-        blockInPlayOption
+        newGameState.BlockInPlay
         |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
         |> Option.defaultValue false
       TimeUntilDrop = if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
