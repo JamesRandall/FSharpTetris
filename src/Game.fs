@@ -226,6 +226,7 @@ let init (canvas:HTMLCanvasElement) =
     
     clearCanvas context  
     drawPit newGameState.Cells newGameState.BlockInPlay
+    drawBlock { Block = game.NextBlock ; X = pitWidth+2 ; Y = 2 } 
     
     newGameState
     
