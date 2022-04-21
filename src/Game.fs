@@ -9,6 +9,10 @@ open App.Render
 let private pitWidth = 12 // left and right are for walls
 let private pitHeight = 19 // bottom row is for wall
 let private pitColor = { Fill = 0x1F2937 ; Top = 0x4B5563 ; Left = 0x4B5563 ;Right = 0x111827 ; Bottom = 0x111827 }
+let private emptyRow =
+  {0..pitWidth-1}
+  |> Seq.map (fun col -> if col = 0 || col = pitWidth-1 then Cell.Wall else Cell.Empty)
+  |> Seq.toArray
 
 let private isInCollision blockArray x y (pit:Cell[][]) =
   blockArray
@@ -52,7 +56,44 @@ let private updateWithNextBlock game =
         NextBlock = Blocks.getRandomBlock ()
     }
   | _ -> game
-    
+  
+let private eraseRows rowIndexes game =
+  let newCells =
+    game.Cells
+    |> Array.mapi (fun rowIndex row ->
+      if rowIndexes |> List.contains rowIndex then
+        emptyRow
+      else
+        row
+    )
+  { game with Cells = newCells ; GameMode = ErasingRowMode.FallingRows |> GameMode.ErasingRows }
+  
+let private fallRows game =
+  // we take a fairly simple approach to making rows fall - we find the deepest empty row in the pit and everything
+  // above it falls by one row, we repeat this until nothing more falls (which we detect by the pit being unchanged)
+  // its by no means the most optimal way of doing it but has the advantage of being simple!
+  
+  let _,_,newCells =
+    let reversedCells = game.Cells |> Array.rev
+    reversedCells
+    |> Array.fold (fun (isFalling,rowIndex,newCells) currentRow ->
+      if rowIndex = 0 then
+        // the first row is the bottom of the pit - so we skip it, but we need to count it so we can keep the indexes tracked
+        (isFalling,rowIndex+1,newCells |> List.append [currentRow])
+      else
+        let rowToAppendWhenFalling = if rowIndex = pitHeight-1 then emptyRow else reversedCells.[rowIndex+1]
+        if isFalling then
+          (isFalling,rowIndex+1,rowToAppendWhenFalling :: newCells)
+        else
+          let isNowFalling = currentRow = emptyRow
+          (isNowFalling,rowIndex+1,(if isNowFalling then rowToAppendWhenFalling else currentRow) :: newCells)
+    ) (false,0,[])
+  let newCellsAsArray = newCells |> List.toArray
+  { game with
+      GameMode = if newCellsAsArray = game.Cells then GameMode.Normal else ErasingRowMode.FallingRows |> GameMode.ErasingRows
+      Cells = newCellsAsArray
+  }
+ 
 let private populatePitWithBlockInPlay blockInPlay game =
   // F# arrays are mutable but keeping things immutably functional in style - chose arrays because I'm doing a lot
   // of indexed access
@@ -73,7 +114,7 @@ let private populatePitWithBlockInPlay blockInPlay game =
       else
         pitRow
     )
-  { game with Cells = newCells }
+  { game with Cells = newCells ; BlockInPlay = None }
 
 let private processTurn frameTime game =
   let (|NoTimeRemaining|TimeRemaining|) timeRemaining = if timeRemaining <= 0.<ms> then NoTimeRemaining else TimeRemaining
@@ -82,33 +123,43 @@ let private processTurn frameTime game =
     let constraints = Blocks.getConstraints block
     { Block = block ; X = 5 ; Y = -constraints.MinY }
   
-  match game.GameMode with
-  | GameMode.ErasingRows _ -> game
-  | GameMode.GameOver -> game
-  | GameMode.Normal ->
-    let newTimeRemaining = game.TimeUntilDrop - frameTime
-    let newGameState =
-      match newTimeRemaining,game.BlockInPlay with
-      | TimeRemaining,_ -> game
-      | NoTimeRemaining,Some blockInPlay ->
-        let wouldCollide = isInCollision blockInPlay.Block.Current blockInPlay.X (blockInPlay.Y+1) game.Cells
-        if wouldCollide then
-          game
-          |> populatePitWithBlockInPlay blockInPlay
-          |> updateForRowRemoval
-          |> updateWithNextBlock
-        else
-          { game with BlockInPlay = { blockInPlay with Y = blockInPlay.Y + 1 } |> Some }
-      | NoTimeRemaining,None ->
-        { game with BlockInPlay = createNewBlockInPlay () |> Some ; NextBlock = Blocks.getRandomBlock () }
-    
-    { newGameState with
-        IsInCollision =
-          newGameState.BlockInPlay
-          |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
-          |> Option.defaultValue false
-        TimeUntilDrop = if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
-    }
+  let newTimeRemaining = game.TimeUntilDrop - frameTime
+  
+  let updatedGameState =
+    match game.GameMode with
+    | GameMode.ErasingRows erasureMode ->
+      match newTimeRemaining with
+      | NoTimeRemaining ->
+        match erasureMode with
+        | ErasingRowMode.BlankingRows rowIndexes ->
+          game |> eraseRows rowIndexes
+        | ErasingRowMode.FallingRows ->
+          game |> fallRows
+      | TimeRemaining -> game
+    | GameMode.GameOver -> game
+    | GameMode.Normal ->
+      let newGameState =
+        match newTimeRemaining,game.BlockInPlay with
+        | TimeRemaining,_ -> game
+        | NoTimeRemaining,Some blockInPlay ->
+          let wouldCollide = isInCollision blockInPlay.Block.Current blockInPlay.X (blockInPlay.Y+1) game.Cells
+          if wouldCollide then
+            game
+            |> populatePitWithBlockInPlay blockInPlay
+            |> updateForRowRemoval
+            |> updateWithNextBlock
+          else
+            { game with BlockInPlay = { blockInPlay with Y = blockInPlay.Y + 1 } |> Some }
+        | NoTimeRemaining,None ->
+          { game with BlockInPlay = createNewBlockInPlay () |> Some ; NextBlock = Blocks.getRandomBlock () }
+      
+      { newGameState with
+          IsInCollision =
+            newGameState.BlockInPlay
+            |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
+            |> Option.defaultValue false
+      }
+  { updatedGameState with TimeUntilDrop = if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining }
 
 let init (canvas:HTMLCanvasElement) =
   let context = canvas.getContext_2d()

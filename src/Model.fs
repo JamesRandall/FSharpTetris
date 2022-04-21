@@ -49,7 +49,7 @@ type ControlState =
 [<RequireQualifiedAccess>]
 type ErasingRowMode =
   | BlankingRows of rowIndexes:int list 
-  | FallingRows of rowIndexes:int list
+  | FallingRows
   
 [<RequireQualifiedAccess>]
 type GameMode =
