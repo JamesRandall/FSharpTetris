@@ -1,6 +1,8 @@
 module App.Model
 
 [<Measure>] type ms
+[<Measure>] type points
+[<Measure>] type rows
 
 type BlockColor =
   { Fill: int
@@ -61,9 +63,11 @@ type Game =
   { Cells: Cell[][] // Array2D not supported in Fable
     NextBlock: Block
     BlockInPlay: BlockInPlay option
-    Score: int
-    Speed: float<ms>
-    TimeUntilDrop: float<ms> // time until the game forces the block to drop a row
+    Score: int<points>
+    TimeUntilNextGameAction: float<ms> // time until the game forces the block to drop a row
     IsInCollision: bool
     GameMode: GameMode
+    RowsDeleted: int<rows>
   }
+  member x.Level =  x.RowsDeleted / 10
+  member x.Speed = 1000.<ms> - ((x.Level |> float) * 75.<ms>)

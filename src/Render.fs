@@ -18,6 +18,10 @@ let fill (context:CanvasRenderingContext2D) color left top width height =
 let clearCanvas (context:CanvasRenderingContext2D) =
   fill context 0 0. 0. context.canvas.width context.canvas.height
   
+let fillText (context:CanvasRenderingContext2D) text x y =
+  context.fillStyle <- ("#e0e0e0" |> U3.Case1)
+  context.fillText (text,x,y)
+  
 let stroke (context:CanvasRenderingContext2D) strokeSize color x1 y1 x2 y2 =
   context.strokeStyle <- (color |> toColorString |> U3.Case1)
   context.lineWidth <- strokeSize

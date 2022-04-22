@@ -14,6 +14,7 @@ let private emptyRow =
   {0..pitWidth-1}
   |> Seq.map (fun col -> if col = 0 || col = pitWidth-1 then Cell.Wall else Cell.Empty)
   |> Seq.toArray
+let private rowRemovalTimeMs = 200.<ms>
 
 let private isInCollision blockArray x y (pit:Cell[][]) =
   blockArray
@@ -46,7 +47,9 @@ let private updateForRowRemoval game =
   if rowIndexes |> List.isEmpty then
     game
   else
-    { game with GameMode = rowIndexes |> ErasingRowMode.BlankingRows |> GameMode.ErasingRows }
+    { game with
+        GameMode = rowIndexes |> ErasingRowMode.BlankingRows |> GameMode.ErasingRows
+        TimeUntilNextGameAction = rowRemovalTimeMs }
     
 let private updateWithNextBlock game =
   match game.GameMode with
@@ -68,7 +71,14 @@ let private eraseRows rowIndexes game =
       else
         row
     )
-  { game with Cells = newCells ; GameMode = ErasingRowMode.FallingRows |> GameMode.ErasingRows }
+  { game with
+      Cells = newCells
+      GameMode = ErasingRowMode.FallingRows |> GameMode.ErasingRows
+      Score = game.Score + (rowIndexes.Length * (10<points> + (game.Level |> int) * 2<points>))
+      RowsDeleted = game.RowsDeleted + (rowIndexes.Length * 1<rows>)
+      TimeUntilNextGameAction = rowRemovalTimeMs
+  }
+  
   
 let private fallRows game =
   // we take a fairly simple approach to making rows fall - we find the deepest empty row in the pit and everything
@@ -91,9 +101,11 @@ let private fallRows game =
           (isNowFalling,rowIndex+1,(if isNowFalling then rowToAppendWhenFalling else currentRow) :: newCells)
     ) (false,0,[])
   let newCellsAsArray = newCells |> List.toArray
+  let noChange = newCellsAsArray = game.Cells
   { game with
-      GameMode = if newCellsAsArray = game.Cells then GameMode.Normal else ErasingRowMode.FallingRows |> GameMode.ErasingRows
+      GameMode = if noChange then GameMode.Normal else ErasingRowMode.FallingRows |> GameMode.ErasingRows
       Cells = newCellsAsArray
+      TimeUntilNextGameAction = rowRemovalTimeMs
   }
  
 let private populatePitWithBlockInPlay blockInPlay game =
@@ -125,46 +137,47 @@ let private processTurn frameTime game =
     let constraints = Blocks.getConstraints block
     { Block = block ; X = 5 ; Y = -constraints.MinY }
   
-  let newTimeRemaining = game.TimeUntilDrop - frameTime
+  let newTimeRemaining = game.TimeUntilNextGameAction - frameTime
   
-  let updatedGameState =
-    match game.GameMode with
-    | GameMode.ErasingRows erasureMode ->
-      match newTimeRemaining with
-      | NoTimeRemaining ->
-        match erasureMode with
-        | ErasingRowMode.BlankingRows rowIndexes ->
-          game |> eraseRows rowIndexes
-        | ErasingRowMode.FallingRows ->
-          game |> fallRows
-      | TimeRemaining -> game
-    | GameMode.GameOver -> game
-    | GameMode.Normal ->
-      let newGameState =
-        match newTimeRemaining,game.BlockInPlay with
-        | TimeRemaining,_ -> game
-        | NoTimeRemaining,Some blockInPlay ->
-          let wouldCollide = isInCollision blockInPlay.Block.Current blockInPlay.X (blockInPlay.Y+1) game.Cells
-          if wouldCollide then
-            game
-            |> populatePitWithBlockInPlay blockInPlay
-            |> updateForRowRemoval
-            |> updateWithNextBlock
-          else
-            { game with BlockInPlay = { blockInPlay with Y = blockInPlay.Y + 1 } |> Some }
-        | NoTimeRemaining,None ->
-          game |> updateWithNextBlock
-      
-      { newGameState with
-          IsInCollision =
-            newGameState.BlockInPlay
-            |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
-            |> Option.defaultValue false
-      }
-  { updatedGameState with TimeUntilDrop = if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining }
+  match game.GameMode with
+  | GameMode.ErasingRows erasureMode ->
+    match newTimeRemaining with
+    | NoTimeRemaining ->
+      match erasureMode with
+      | ErasingRowMode.BlankingRows rowIndexes ->
+        game |> eraseRows rowIndexes
+      | ErasingRowMode.FallingRows ->
+        game |> fallRows
+    | TimeRemaining ->
+      { game with TimeUntilNextGameAction = newTimeRemaining } 
+  | GameMode.GameOver -> game
+  | GameMode.Normal ->
+    let newGameState =
+      match newTimeRemaining,game.BlockInPlay with
+      | TimeRemaining,_ -> game
+      | NoTimeRemaining,Some blockInPlay ->
+        let wouldCollide = isInCollision blockInPlay.Block.Current blockInPlay.X (blockInPlay.Y+1) game.Cells
+        if wouldCollide then
+          game
+          |> populatePitWithBlockInPlay blockInPlay
+          |> updateForRowRemoval
+          |> updateWithNextBlock
+        else
+          { game with BlockInPlay = { blockInPlay with Y = blockInPlay.Y + 1 } |> Some }
+      | NoTimeRemaining,None ->
+        game |> updateWithNextBlock
+    
+    { newGameState with
+        IsInCollision =
+          newGameState.BlockInPlay
+          |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
+          |> Option.defaultValue false
+        TimeUntilNextGameAction = if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
+    }
 
 let init (canvas:HTMLCanvasElement) =
   let context = canvas.getContext_2d()
+  // setting up the context only needs to be done once - these settings let us making things square and pixely
   context?imageSmoothingEnabled <- false
   context.lineCap <- "square"
   context.translate(0.5,0.5)
@@ -182,11 +195,11 @@ let init (canvas:HTMLCanvasElement) =
         |> Seq.toArray
       NextBlock = Blocks.getRandomBlock ()
       BlockInPlay = None
-      Score = 0
-      Speed = 1000.<ms>
-      TimeUntilDrop = 1000.<ms>
+      Score = 0<points>
+      TimeUntilNextGameAction = 1000.<ms>
       IsInCollision = false
       GameMode = GameMode.Normal
+      RowsDeleted = 0<rows>
     }
   
   let gameLoop game (timestamp:float<ms>) =
@@ -223,12 +236,18 @@ let init (canvas:HTMLCanvasElement) =
         )  
       )
       match blockInPlay with | Some blockInPlay -> drawBlock blockInPlay | None -> ()
+    let drawScore () =
+      context.font <- "30px Consolas, Menlo, monospace"
+      fillText context $"Score {game.Score}" 16. 32.
+      fillText context $"Level {game.Level}" 16. 64.
+    
       
     let newGameState = processTurn timestamp game
     
     clearCanvas context  
     drawPit newGameState.Cells newGameState.BlockInPlay
-    drawBlock { Block = game.NextBlock ; X = pitWidth+2 ; Y = 2 } 
+    drawBlock { Block = game.NextBlock ; X = pitWidth+2 ; Y = 2 }
+    drawScore ()
     
     newGameState
     
@@ -244,7 +263,7 @@ let init (canvas:HTMLCanvasElement) =
             if block.CurrentRotation + 1 >= block.Rotations.Length then 0 else block.CurrentRotation+1
       }
     let updateGame blockInPlay = { game with BlockInPlay = Some blockInPlay }
-    let resetClock gameToReset = { gameToReset with TimeUntilDrop = gameToReset.Speed }
+    let resetClock gameToReset = { gameToReset with TimeUntilNextGameAction = gameToReset.Speed }
     
     game.BlockInPlay
     |> Option.map (fun blockInPlay ->
