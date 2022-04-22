@@ -68,6 +68,8 @@ type Game =
     IsInCollision: bool
     GameMode: GameMode
     RowsDeleted: int<rows>
+    TimeUntilKeyRepeat: float<ms>
+    ControlState: ControlState
   }
   member x.Level =  x.RowsDeleted / 8
   member x.Speed = 1000.<ms> - ((x.Level |> float) * 75.<ms>)

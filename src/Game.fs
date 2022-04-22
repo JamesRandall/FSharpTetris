@@ -15,6 +15,7 @@ let private emptyRow =
   |> Seq.map (fun col -> if col = 0 || col = pitWidth-1 then Cell.Wall else Cell.Empty)
   |> Seq.toArray
 let private rowRemovalTimeMs = 200.<ms>
+let private keyRepeatTimeMs = 100.<ms>
 
 let private isInCollision blockArray x y (pit:Cell[][]) =
   blockArray
@@ -129,13 +130,51 @@ let private populatePitWithBlockInPlay blockInPlay game =
         pitRow
     )
   { game with Cells = newCells ; BlockInPlay = None }
+  
+let private handleControlState game =
+  let rotateLeft block =
+    { block with
+        CurrentRotation =
+          if block.CurrentRotation - 1 < 0 then block.Rotations.Length-1 else block.CurrentRotation-1
+    }
+  let rotateRight block =
+    { block with
+        CurrentRotation =
+          if block.CurrentRotation + 1 >= block.Rotations.Length then 0 else block.CurrentRotation+1
+    }
+  let updateGame blockInPlay = { game with BlockInPlay = Some blockInPlay }
+  let resetClock gameToReset = { gameToReset with TimeUntilNextGameAction = gameToReset.Speed }
+  
+  game.BlockInPlay
+  |> Option.map (fun blockInPlay ->
+    let candidateNewGameState  =
+      match game.ControlState with
+      | ControlState.MoveLeft -> { blockInPlay with X = blockInPlay.X - 1 } |> updateGame
+      | ControlState.MoveRight -> { blockInPlay with X = blockInPlay.X + 1 } |> updateGame
+      | ControlState.MoveDown -> { blockInPlay with Y = blockInPlay.Y + 1 } |> updateGame |> resetClock
+      | ControlState.RotateLeft -> { blockInPlay with Block = blockInPlay.Block |> rotateLeft } |> updateGame
+      | ControlState.RotateRight -> { blockInPlay with Block = blockInPlay.Block |> rotateRight } |> updateGame
+      | _ -> game
+    candidateNewGameState.BlockInPlay
+    |> Option.map(fun candidateBlockInPlay ->
+      if isInCollision candidateBlockInPlay.Current candidateBlockInPlay.X candidateBlockInPlay.Y game.Cells then
+        game
+      else
+        candidateNewGameState
+    )
+    |> Option.defaultValue game
+  )
+  |> Option.defaultValue game
+  
+let private handleControlStateRepeat frameTime game =
+  let keyboardTimeRemaining = game.TimeUntilKeyRepeat - frameTime
+  if keyboardTimeRemaining <= 0.<ms> then
+    { (game |> handleControlState) with TimeUntilKeyRepeat = (min keyRepeatTimeMs game.Speed) + frameTime }
+  else
+    { game with TimeUntilKeyRepeat = keyboardTimeRemaining }
 
 let private processTurn frameTime game =
   let (|NoTimeRemaining|TimeRemaining|) timeRemaining = if timeRemaining <= 0.<ms> then NoTimeRemaining else TimeRemaining
-  let createNewBlockInPlay () =
-    let block = Blocks.getRandomBlock ()
-    let constraints = Blocks.getConstraints block
-    { Block = block ; X = 5 ; Y = -constraints.MinY }
   
   let newTimeRemaining = game.TimeUntilNextGameAction - frameTime
   
@@ -200,9 +239,11 @@ let init (canvas:HTMLCanvasElement) =
       IsInCollision = false
       GameMode = GameMode.Normal
       RowsDeleted = 10<rows>
+      ControlState = ControlState.None
+      TimeUntilKeyRepeat = keyRepeatTimeMs
     }
   
-  let gameLoop game (timestamp:float<ms>) =
+  let gameLoop game (frameTime:float<ms>) =
     // doing the sizing in the game loop allows us to respond to canvas resizes
     let width = canvas.width
     let height = canvas.height
@@ -241,8 +282,10 @@ let init (canvas:HTMLCanvasElement) =
       fillText context $"Score {game.Score}" 16. 32.
       fillText context $"Level {game.Level}" 16. 64.
     
-      
-    let newGameState = processTurn timestamp game
+    let newGameState =
+      game
+      |> handleControlStateRepeat frameTime
+      |> processTurn frameTime
     
     clearCanvas context  
     drawPit newGameState.Cells newGameState.BlockInPlay
@@ -252,39 +295,7 @@ let init (canvas:HTMLCanvasElement) =
     newGameState
     
   let controlStateHandler game controlState =
-    let rotateLeft block =
-      { block with
-          CurrentRotation =
-            if block.CurrentRotation - 1 < 0 then block.Rotations.Length-1 else block.CurrentRotation-1
-      }
-    let rotateRight block =
-      { block with
-          CurrentRotation =
-            if block.CurrentRotation + 1 >= block.Rotations.Length then 0 else block.CurrentRotation+1
-      }
-    let updateGame blockInPlay = { game with BlockInPlay = Some blockInPlay }
-    let resetClock gameToReset = { gameToReset with TimeUntilNextGameAction = gameToReset.Speed }
-    
-    game.BlockInPlay
-    |> Option.map (fun blockInPlay ->
-      let candidateNewGameState  =
-        match controlState with
-        | ControlState.MoveLeft -> { blockInPlay with X = blockInPlay.X - 1 } |> updateGame
-        | ControlState.MoveRight -> { blockInPlay with X = blockInPlay.X + 1 } |> updateGame
-        | ControlState.MoveDown -> { blockInPlay with Y = blockInPlay.Y + 1 } |> updateGame |> resetClock
-        | ControlState.RotateLeft -> { blockInPlay with Block = blockInPlay.Block |> rotateLeft } |> updateGame
-        | ControlState.RotateRight -> { blockInPlay with Block = blockInPlay.Block |> rotateRight } |> updateGame
-        | _ -> game
-      candidateNewGameState.BlockInPlay
-      |> Option.map(fun candidateBlockInPlay ->
-        if isInCollision candidateBlockInPlay.Current candidateBlockInPlay.X candidateBlockInPlay.Y game.Cells then
-          game
-        else
-          candidateNewGameState
-      )
-      |> Option.defaultValue game
-    )
-    |> Option.defaultValue game
+    handleControlState  { game with ControlState = controlState }
 
   gameLoop,controlStateHandler,initialGameState
   
