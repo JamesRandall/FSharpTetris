@@ -69,5 +69,5 @@ type Game =
     GameMode: GameMode
     RowsDeleted: int<rows>
   }
-  member x.Level =  x.RowsDeleted / 10
+  member x.Level =  x.RowsDeleted / 8
   member x.Speed = 1000.<ms> - ((x.Level |> float) * 75.<ms>)

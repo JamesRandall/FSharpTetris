@@ -199,7 +199,7 @@ let init (canvas:HTMLCanvasElement) =
       TimeUntilNextGameAction = 1000.<ms>
       IsInCollision = false
       GameMode = GameMode.Normal
-      RowsDeleted = 0<rows>
+      RowsDeleted = 10<rows>
     }
   
   let gameLoop game (timestamp:float<ms>) =
