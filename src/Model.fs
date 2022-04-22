@@ -20,7 +20,7 @@ type Constraints =
   }
 
 type Block =
-  { Rotations: int[][][]
+  { Rotations: int list list list
     CurrentRotation: int
     Color: BlockColor
   }
@@ -60,7 +60,7 @@ type GameMode =
   | GameOver
   
 type Game =
-  { Cells: Cell[][] // Array2D not supported in Fable
+  { Cells: Cell list list
     NextBlock: Block
     BlockInPlay: BlockInPlay option
     Score: int<points>

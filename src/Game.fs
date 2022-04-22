@@ -13,37 +13,36 @@ let private pitColor = { Fill = 0x1F2937 ; Top = 0x4B5563 ; Left = 0x4B5563 ;Rig
 let private emptyRow =
   {0..pitWidth-1}
   |> Seq.map (fun col -> if col = 0 || col = pitWidth-1 then Cell.Wall else Cell.Empty)
-  |> Seq.toArray
+  |> Seq.toList
 let private rowRemovalTimeMs = 200.<ms>
 let private keyRepeatTimeMs = 100.<ms>
 
-let private isInCollision blockArray x y (pit:Cell[][]) =
+let private isInCollision blockArray x y (pit:Cell list list) =
   blockArray
-  |> Array.mapi(fun rowIndex row ->
-    let pitRow = if (rowIndex+y) >= pit.Length || (rowIndex+y) < 0 then [||] else pit.[rowIndex+y]
+  |> List.mapi(fun rowIndex row ->
+    let pitRow = if (rowIndex+y) >= pit.Length || (rowIndex+y) < 0 then [] else pit.[rowIndex+y]
     row
-    |> Array.mapi(fun colIndex cell ->
+    |> List.mapi(fun colIndex cell ->
       // if either cell is empty then their is no collision
       if (colIndex+x) >= pitRow.Length || (colIndex+x) < 0 then true else pitRow.[colIndex+x] = Cell.Empty || cell = 0 
     )
-    |> Array.skipWhile id
+    |> List.skipWhile id
   )
-  |> Array.concat
-  |> Array.tryHead
+  |> List.concat
+  |> List.tryHead
   |> Option.isSome
 
 let private updateForRowRemoval game =
   let shouldBeRemoved row =
     // if we have as many blocks as the pit is wide (minus the walls) then we can remove the row
-    let blockCount = row |> Array.filter(function | Cell.Block _ -> true | _ -> false) |> Array.length
+    let blockCount = row |> List.filter(function | Cell.Block _ -> true | _ -> false) |> List.length
     blockCount = pitWidth-2
     
   let rowIndexes =
     game.Cells
-    |> Array.mapi(fun rowIndex row ->
+    |> List.mapi(fun rowIndex row ->
       if row |> shouldBeRemoved then [rowIndex] else []
     )
-    |> Array.toList
     |> List.concat
   if rowIndexes |> List.isEmpty then
     game
@@ -66,7 +65,7 @@ let private updateWithNextBlock game =
 let private eraseRows rowIndexes game =
   let newCells =
     game.Cells
-    |> Array.mapi (fun rowIndex row ->
+    |> List.mapi (fun rowIndex row ->
       if rowIndexes |> List.contains rowIndex then
         emptyRow
       else
@@ -87,9 +86,9 @@ let private fallRows game =
   // its by no means the most optimal way of doing it but has the advantage of being simple!
   
   let _,_,newCells =
-    let reversedCells = game.Cells |> Array.rev
+    let reversedCells = game.Cells |> List.rev
     reversedCells
-    |> Array.fold (fun (isFalling,rowIndex,newCells) currentRow ->
+    |> List.fold (fun (isFalling,rowIndex,newCells) currentRow ->
       if rowIndex = 0 then
         // the first row is the bottom of the pit - so we skip it, but we need to count it so we can keep the indexes tracked
         (isFalling,rowIndex+1,newCells |> List.append [currentRow])
@@ -101,7 +100,7 @@ let private fallRows game =
           let isNowFalling = currentRow = emptyRow
           (isNowFalling,rowIndex+1,(if isNowFalling then rowToAppendWhenFalling else currentRow) :: newCells)
     ) (false,0,[])
-  let newCellsAsArray = newCells |> List.toArray
+  let newCellsAsArray = newCells
   let noChange = newCellsAsArray = game.Cells
   { game with
       GameMode = if noChange then GameMode.Normal else ErasingRowMode.FallingRows |> GameMode.ErasingRows
@@ -114,12 +113,12 @@ let private populatePitWithBlockInPlay blockInPlay game =
   // of indexed access
   let newCells =
     game.Cells
-    |> Array.mapi(fun rowIndex pitRow ->
+    |> List.mapi(fun rowIndex pitRow ->
       let blockY = rowIndex - blockInPlay.Y
       if blockY >= 0 && blockY < blockInPlay.Current.Length then
         let blockRow = blockInPlay.Current.[blockY]
         pitRow
-        |> Array.mapi(fun colIndex cell ->
+        |> List.mapi(fun colIndex cell ->
           let blockX = colIndex - blockInPlay.X
           if blockX >= 0 && blockX < blockRow.Length then 
             if blockRow.[blockX] <> 0 then Cell.Block blockInPlay.Block.Color else cell
@@ -229,9 +228,9 @@ let init (canvas:HTMLCanvasElement) =
           |> Seq.map(fun col ->
             if col = 0 || col = pitWidth-1 || row = pitHeight-1 then Cell.Wall else Cell.Empty
           )
-          |> Seq.toArray
+          |> Seq.toList
         )
-        |> Seq.toArray
+        |> Seq.toList
       NextBlock = Blocks.getRandomBlock ()
       BlockInPlay = None
       Score = 0<points>
@@ -259,17 +258,17 @@ let init (canvas:HTMLCanvasElement) =
       drawSquareAtCanvasCoords context color x y blockSize
     let drawBlock (blockInPlay:BlockInPlay) =
       blockInPlay.Block.Current
-      |> Array.iteri(fun rowIndex row ->
+      |> List.iteri(fun rowIndex row ->
         row
-        |> Array.iteri(fun colIndex cell ->
+        |> List.iteri(fun colIndex cell ->
           if cell > 0 then drawSquare blockInPlay.Block.Color (blockInPlay.X+colIndex) (blockInPlay.Y+rowIndex)
         )
       )
     let drawPit cells blockInPlay =
       cells
-      |> Array.iteri(fun row rowContent ->
+      |> List.iteri(fun row rowContent ->
         rowContent
-        |> Array.iteri(fun col cell ->
+        |> List.iteri(fun col cell ->
           match cell with
           | Cell.Empty -> ()
           | Cell.Wall -> drawSquare pitColor col row
