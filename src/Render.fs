@@ -16,11 +16,11 @@ let fill (context:CanvasRenderingContext2D) color left top width height =
   context.fillRect (left, top, width, height)
   
 let clearCanvas (context:CanvasRenderingContext2D) =
-  fill context 0 0. 0. context.canvas.width context.canvas.height
+  fill context 0 -1. -1. (context.canvas.width+2.) (context.canvas.height+2.)
   
 let overlay (context:CanvasRenderingContext2D) =
   context.fillStyle <- ("rgba(0,0,0,0.66)" |> U3.Case1)
-  context.fillRect (0., 0., context.canvas.width, context.canvas.height)
+  context.fillRect (-1., -1., context.canvas.width+2., context.canvas.height+2.)
   
 let fillText (context:CanvasRenderingContext2D) text x y =
   context.textAlign <- "start"
