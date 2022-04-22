@@ -15,7 +15,8 @@ let private emptyRow =
   |> Seq.map (fun col -> if col = 0 || col = pitWidth-1 then Cell.Wall else Cell.Empty)
   |> Seq.toList
 let private rowRemovalTimeMs = 200.<ms>
-let private keyRepeatTimeMs = 100.<ms>
+let private keyRepeatTimeMs = 150.<ms>
+let private speedClampedKeyRepeatTimeMs = min keyRepeatTimeMs
 
 let private isInCollision blockArray x y (pit:Cell list list) =
   blockArray
@@ -168,7 +169,7 @@ let private handleControlState game =
 let private handleControlStateRepeat frameTime game =
   let keyboardTimeRemaining = game.TimeUntilKeyRepeat - frameTime
   if keyboardTimeRemaining <= 0.<ms> then
-    { (game |> handleControlState) with TimeUntilKeyRepeat = (min keyRepeatTimeMs game.Speed) + frameTime }
+    { (game |> handleControlState) with TimeUntilKeyRepeat = (speedClampedKeyRepeatTimeMs game.Speed) + frameTime }
   else
     { game with TimeUntilKeyRepeat = keyboardTimeRemaining }
 
@@ -210,7 +211,10 @@ let private processTurn frameTime game =
           newGameState.BlockInPlay
           |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
           |> Option.defaultValue false
-        TimeUntilNextGameAction = if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
+        TimeUntilNextGameAction =
+          match game.GameMode with
+          | GameMode.Normal -> if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
+          | _ -> game.TimeUntilNextGameAction
     }
 
 let init (canvas:HTMLCanvasElement) =
@@ -243,7 +247,7 @@ let init (canvas:HTMLCanvasElement) =
     }
   
   let gameLoop game (frameTime:float<ms>) =
-    // doing the sizing in the game loop allows us to respond to canvas resizes
+    // doing the sizing in the game loop allows us to respond to canvas resizes while the game is in progress
     let width = canvas.width
     let height = canvas.height
     let blockSize = (height - (pitHeight |> float)) / (pitHeight |> float) |> floor
@@ -293,8 +297,9 @@ let init (canvas:HTMLCanvasElement) =
     
     newGameState
     
-  let controlStateHandler game controlState =
-    handleControlState  { game with ControlState = controlState }
+  let updateControlState game controlState =
+    handleControlState
+      { game with ControlState = controlState ; TimeUntilKeyRepeat = speedClampedKeyRepeatTimeMs game.Speed }
 
-  gameLoop,controlStateHandler,initialGameState
+  gameLoop,updateControlState,initialGameState
   
