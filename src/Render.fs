@@ -18,9 +18,19 @@ let fill (context:CanvasRenderingContext2D) color left top width height =
 let clearCanvas (context:CanvasRenderingContext2D) =
   fill context 0 0. 0. context.canvas.width context.canvas.height
   
+let overlay (context:CanvasRenderingContext2D) =
+  context.fillStyle <- ("rgba(0,0,0,0.66)" |> U3.Case1)
+  context.fillRect (0., 0., context.canvas.width, context.canvas.height)
+  
 let fillText (context:CanvasRenderingContext2D) text x y =
+  context.textAlign <- "start"
   context.fillStyle <- ("#e0e0e0" |> U3.Case1)
   context.fillText (text,x,y)
+  
+let centerText (context:CanvasRenderingContext2D) text offsetX offsetY =
+  context.textAlign <- "center"
+  context.fillStyle <- ("#e0e0e0" |> U3.Case1)
+  context.fillText (text, context.canvas.width/2. + offsetX, context.canvas.height/2. - 15. + offsetY)
   
 let stroke (context:CanvasRenderingContext2D) strokeSize color x1 y1 x2 y2 =
   context.strokeStyle <- (color |> toColorString |> U3.Case1)

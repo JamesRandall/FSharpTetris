@@ -3,6 +3,7 @@ module App.Model
 [<Measure>] type ms
 [<Measure>] type points
 [<Measure>] type rows
+[<Measure>] type level
 
 type BlockColor =
   { Fill: int
@@ -46,6 +47,7 @@ type ControlState =
   | MoveDown
   | RotateLeft
   | RotateRight
+  | NewGame
   | None
   
 [<RequireQualifiedAccess>]
@@ -65,11 +67,10 @@ type Game =
     BlockInPlay: BlockInPlay option
     Score: int<points>
     TimeUntilNextGameAction: float<ms> // time until the game forces the block to drop a row
-    IsInCollision: bool
     GameMode: GameMode
     RowsDeleted: int<rows>
     TimeUntilKeyRepeat: float<ms>
     ControlState: ControlState
   }
-  member x.Level =  x.RowsDeleted / 8
+  member x.Level = (int x.RowsDeleted / 8) * 1<level>
   member x.Speed = 1000.<ms> - ((x.Level |> float) * 75.<ms>)

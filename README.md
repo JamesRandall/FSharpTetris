@@ -2,6 +2,8 @@
 
 Simple implementation of Tetris in F# using Fable to run it in a browser. Might not be an exact match for "real" Tetris. Was only distracting myself with some code really.
 
+Use the cursor keys to move blocks left, right and down. Z and X to rotate the blocks.
+
 Basic premise / architecture is to keep the event based browser model and mutable state at the top level so the rest of the code can be more purely functional in nature.
 
 Rest of the docs come from the Fable starter project but apply to running this yourself.

@@ -16,7 +16,7 @@ let rec wrappedGameLoop timestamp =
   let timeInFrame = timestamp - previousTimestamp
   previousTimestamp <- timestamp
   currentGameState <- gameLoop currentGameState (timeInFrame * 1.<ms>)
-  if not currentGameState.IsInCollision then (window.requestAnimationFrame wrappedGameLoop) |> ignore
+  window.requestAnimationFrame wrappedGameLoop |> ignore
 
 let private controlStateFromKeyCode keyCode =
   match keyCode with
@@ -25,6 +25,7 @@ let private controlStateFromKeyCode keyCode =
   | "ArrowDown" -> ControlState.MoveDown
   | "KeyZ" -> ControlState.RotateLeft
   | "KeyX" -> ControlState.RotateRight
+  | "Enter" -> ControlState.NewGame
   | _ -> ControlState.None
 
 window.onkeydown <- (fun ke ->
@@ -33,6 +34,7 @@ window.onkeydown <- (fun ke ->
     let controlState = ke.code |> controlStateFromKeyCode
     if controlState <> ControlState.None then ke.preventDefault()
     currentGameState <- controlStateHandler currentGameState controlState
+    console.log ke.code
 )
 window.onkeyup <- (fun ke ->
   if currentGameState.ControlState = (ke.code |> controlStateFromKeyCode) then

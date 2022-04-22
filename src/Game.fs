@@ -4,7 +4,6 @@ open App.Model
 open Browser.Types
 open Fable.Core.JsInterop
 open App.Render
-open Browser
 
 // we want a 10x18 hole but we oversize it so we can have the left, right and bottom for the pit walls
 let private pitWidth = 12 // left and right are for walls
@@ -17,6 +16,27 @@ let private emptyRow =
 let private rowRemovalTimeMs = 200.<ms>
 let private keyRepeatTimeMs = 150.<ms>
 let private speedClampedKeyRepeatTimeMs = min keyRepeatTimeMs
+
+let private initialGameState =
+  { Cells =
+      {0..(pitHeight-1)}
+      |> Seq.map(fun row ->
+        {0..(pitWidth-1)}
+        |> Seq.map(fun col ->
+          if col = 0 || col = pitWidth-1 || row = pitHeight-1 then Cell.Wall else Cell.Empty
+        )
+        |> Seq.toList
+      )
+      |> Seq.toList
+    NextBlock = Blocks.getRandomBlock ()
+    BlockInPlay = None
+    Score = 0<points>
+    TimeUntilNextGameAction = 1000.<ms>
+    GameMode = GameMode.Normal
+    RowsDeleted = 0<rows>
+    ControlState = ControlState.None
+    TimeUntilKeyRepeat = keyRepeatTimeMs
+  }
 
 let private isInCollision blockArray x y (pit:Cell list list) =
   blockArray
@@ -189,7 +209,7 @@ let private processTurn frameTime game =
         game |> fallRows
     | TimeRemaining ->
       { game with TimeUntilNextGameAction = newTimeRemaining } 
-  | GameMode.GameOver -> game
+  | GameMode.GameOver -> match game.ControlState with | ControlState.NewGame -> initialGameState | _ -> game
   | GameMode.Normal ->
     let newGameState =
       match newTimeRemaining,game.BlockInPlay with
@@ -206,11 +226,13 @@ let private processTurn frameTime game =
       | NoTimeRemaining,None ->
         game |> updateWithNextBlock
     
+    let currentlyColliding =
+      newGameState.BlockInPlay
+      |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
+      |> Option.defaultValue false
+    
     { newGameState with
-        IsInCollision =
-          newGameState.BlockInPlay
-          |> Option.map (fun blockInPlay -> isInCollision blockInPlay.Block.Current blockInPlay.X blockInPlay.Y game.Cells)
-          |> Option.defaultValue false
+        GameMode = if currentlyColliding then GameMode.GameOver else game.GameMode
         TimeUntilNextGameAction =
           match game.GameMode with
           | GameMode.Normal -> if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
@@ -219,34 +241,13 @@ let private processTurn frameTime game =
 
 let init (canvas:HTMLCanvasElement) =
   let context = canvas.getContext_2d()
-  // setting up the context only needs to be done once - these settings let us making things square and pixely
-  context?imageSmoothingEnabled <- false
-  context.lineCap <- "square"
-  context.translate(0.5,0.5)
-  
-  let initialGameState =
-    { Cells =
-        {0..(pitHeight-1)}
-        |> Seq.map(fun row ->
-          {0..(pitWidth-1)}
-          |> Seq.map(fun col ->
-            if col = 0 || col = pitWidth-1 || row = pitHeight-1 then Cell.Wall else Cell.Empty
-          )
-          |> Seq.toList
-        )
-        |> Seq.toList
-      NextBlock = Blocks.getRandomBlock ()
-      BlockInPlay = None
-      Score = 0<points>
-      TimeUntilNextGameAction = 1000.<ms>
-      IsInCollision = false
-      GameMode = GameMode.Normal
-      RowsDeleted = 10<rows>
-      ControlState = ControlState.None
-      TimeUntilKeyRepeat = keyRepeatTimeMs
-    }
-  
   let gameLoop game (frameTime:float<ms>) =
+    context.save ()
+    context?imageSmoothingEnabled <- false
+    context.lineCap <- "square"
+    context.translate(0.5,0.5)
+    context.font <- "30px Consolas, Menlo, monospace"
+    
     // doing the sizing in the game loop allows us to respond to canvas resizes while the game is in progress
     let width = canvas.width
     let height = canvas.height
@@ -281,9 +282,13 @@ let init (canvas:HTMLCanvasElement) =
       )
       match blockInPlay with | Some blockInPlay -> drawBlock blockInPlay | None -> ()
     let drawScore () =
-      context.font <- "30px Consolas, Menlo, monospace"
       fillText context $"Score {game.Score}" 16. 32.
-      fillText context $"Level {game.Level}" 16. 64.
+      fillText context $"Level {game.Level + 1<level>}" 16. 64.
+      
+    let drawGameOver () =
+      overlay context
+      centerText context $"GAME OVER!" 0. -32.
+      centerText context $"Press ENTER to play again" 0. 32.
     
     let newGameState =
       game
@@ -294,7 +299,11 @@ let init (canvas:HTMLCanvasElement) =
     drawPit newGameState.Cells newGameState.BlockInPlay
     drawBlock { Block = game.NextBlock ; X = pitWidth+2 ; Y = 2 }
     drawScore ()
-    
+    match game.GameMode with
+    | GameMode.GameOver ->
+      drawGameOver ()
+    | _ -> ()
+    context.restore ()
     newGameState
     
   let updateControlState game controlState =
