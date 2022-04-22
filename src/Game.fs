@@ -4,6 +4,7 @@ open App.Model
 open Browser.Types
 open Fable.Core.JsInterop
 open App.Render
+open Browser
 
 // we want a 10x18 hole but we oversize it so we can have the left, right and bottom for the pit walls
 let private pitWidth = 12 // left and right are for walls
@@ -14,8 +15,18 @@ let private emptyRow =
   |> Seq.map (fun col -> if col = 0 || col = pitWidth-1 then Cell.Wall else Cell.Empty)
   |> Seq.toList
 let private rowRemovalTimeMs = 200.<ms>
-let private keyRepeatTimeMs = 150.<ms>
-let private speedClampedKeyRepeatTimeMs = min keyRepeatTimeMs
+let private movementKeyRepeatTimeMs = 75.<ms>
+let private rotationKeyRepeatTimeMs = 150.<ms>
+let private speedClampedKeyRepeatTimeMs controlState =
+  let repeatSpeed =
+    match controlState with
+    | ControlState.MoveDown
+    | ControlState.MoveLeft
+    | ControlState.MoveRight -> movementKeyRepeatTimeMs
+    | ControlState.RotateLeft
+    | ControlState.RotateRight -> rotationKeyRepeatTimeMs
+    | _ -> movementKeyRepeatTimeMs
+  min repeatSpeed
 
 let private initialGameState =
   { Cells =
@@ -35,7 +46,7 @@ let private initialGameState =
     GameMode = GameMode.Normal
     RowsDeleted = 0<rows>
     ControlState = ControlState.None
-    TimeUntilKeyRepeat = keyRepeatTimeMs
+    TimeUntilKeyRepeat = movementKeyRepeatTimeMs
   }
 
 let private isInCollision blockArray x y (pit:Cell list list) =
@@ -65,6 +76,9 @@ let private updateForRowRemoval game =
       if row |> shouldBeRemoved then [rowIndex] else []
     )
     |> List.concat
+    
+  console.log $"Rows for removal: {rowIndexes.Length}"
+    
   if rowIndexes |> List.isEmpty then
     game
   else
@@ -84,6 +98,7 @@ let private updateWithNextBlock game =
   | _ -> game
   
 let private eraseRows rowIndexes game =
+  console.log "ERASE ROWS"
   let newCells =
     game.Cells
     |> List.mapi (fun rowIndex row ->
@@ -99,7 +114,6 @@ let private eraseRows rowIndexes game =
       RowsDeleted = game.RowsDeleted + (rowIndexes.Length * 1<rows>)
       TimeUntilNextGameAction = rowRemovalTimeMs
   }
-  
   
 let private fallRows game =
   // we take a fairly simple approach to making rows fall - we find the deepest empty row in the pit and everything
@@ -189,7 +203,7 @@ let private handleControlState game =
 let private handleControlStateRepeat frameTime game =
   let keyboardTimeRemaining = game.TimeUntilKeyRepeat - frameTime
   if keyboardTimeRemaining <= 0.<ms> then
-    { (game |> handleControlState) with TimeUntilKeyRepeat = (speedClampedKeyRepeatTimeMs game.Speed) + frameTime }
+    { (game |> handleControlState) with TimeUntilKeyRepeat = (speedClampedKeyRepeatTimeMs game.ControlState game.Speed) + frameTime }
   else
     { game with TimeUntilKeyRepeat = keyboardTimeRemaining }
 
@@ -232,11 +246,11 @@ let private processTurn frameTime game =
       |> Option.defaultValue false
     
     { newGameState with
-        GameMode = if currentlyColliding then GameMode.GameOver else game.GameMode
+        GameMode = if currentlyColliding then GameMode.GameOver else newGameState.GameMode
         TimeUntilNextGameAction =
-          match game.GameMode with
-          | GameMode.Normal -> if newTimeRemaining < 0.<ms> then game.Speed else newTimeRemaining
-          | _ -> game.TimeUntilNextGameAction
+          match newGameState.GameMode with
+          | GameMode.GameOver -> newGameState.TimeUntilNextGameAction
+          | _ -> if newTimeRemaining < 0.<ms> then newGameState.Speed else newTimeRemaining
     }
 
 let init (canvas:HTMLCanvasElement) =
@@ -308,7 +322,7 @@ let init (canvas:HTMLCanvasElement) =
     
   let updateControlState game controlState =
     handleControlState
-      { game with ControlState = controlState ; TimeUntilKeyRepeat = speedClampedKeyRepeatTimeMs game.Speed }
+      { game with ControlState = controlState ; TimeUntilKeyRepeat = speedClampedKeyRepeatTimeMs controlState game.Speed }
 
   gameLoop,updateControlState,initialGameState
   
